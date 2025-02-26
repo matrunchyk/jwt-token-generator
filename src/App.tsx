@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import sign from 'jwt-encode';
 import { v4 as uuidv4 } from 'uuid';
-import { Copy, Key, CheckCircle2, XCircle, Check } from 'lucide-react';
+import { Copy, CheckCircle2, XCircle, Check } from 'lucide-react';
 
 interface FormData {
   email: string;
@@ -54,6 +54,7 @@ function App() {
       try {
         customJSONParsed = JSON.parse(formData.customJSON);
       } catch {
+        // noinspection ExceptionCaughtLocallyJS
         throw new Error('Invalid JSON in custom data');
       }
 
@@ -86,11 +87,11 @@ function App() {
   };
 
   return (
-      <div className="min-h-screen bg-gray-100 py-8 px-4">
+      <div className="min-h-screen bg-gray-100 py-4 px-4">
         <div className="max-w-3xl mx-auto">
+          <img src="/logo.png" alt="Logo" className="mx-auto my-4 w-16 h-16" />
           <div className="bg-white rounded-lg shadow-lg p-6">
             <div className="flex items-center gap-2 mb-6">
-              <Key className="w-8 h-8 text-primary" />
               <h1 className="text-2xl font-bold text-neutral">JWT Token Generator</h1>
             </div>
 
@@ -143,7 +144,7 @@ function App() {
                     name="customJSON"
                     value={formData.customJSON}
                     onChange={handleInputChange}
-                    rows={4}
+                    rows={6}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
                 />
                 <div className="absolute bottom-2 right-2">
@@ -193,6 +194,7 @@ function App() {
                   </div>
               )}
             </div>
+            <div>Have suggestions or found a bug? <a href="https://github.com/matrunchyk/jwt-token-generator/issues" target="_blank" rel="noreferrer" className="text-primary">Open an issue</a></div>
           </div>
         </div>
       </div>
