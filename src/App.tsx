@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import jwt, { type Algorithm } from 'jsonwebtoken';
+import { importPKCS8, JWK, KeyObject, SignJWT, CryptoKey } from 'jose';
 import { v4 as uuidv4 } from 'uuid';
 import { Copy, CheckCircle2, XCircle, Check } from 'lucide-react';
 
@@ -7,7 +7,7 @@ interface FormData {
     email: string;
     jwtSecret: string;
     customJSON: string;
-    algorithm: Algorithm;
+    algorithm: string;
 }
 
 declare global {
@@ -29,7 +29,12 @@ const sendAnalytics = () => {
 }
 
 function App() {
-    const supportedAlgorithms: Algorithm[] = ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512', 'PS256', 'PS384', 'PS512'];
+    const supportedAlgorithms = [
+        'HS256', 'HS384', 'HS512', // HMAC using SHA-256 (shared secret)
+        'RS256', 'RS384', 'RS512', // RSASSA-PKCS1-v1_5 using SHA-256 (RSA public/private key pair)
+        'ES256', 'ES384', 'ES512', // ECDSA using P-256 curve and SHA-256 (Elliptic Curve public/private key pair)
+        'PS256', 'PS384', 'PS512', // RSASSA-PSS using SHA-256 (RSA public/private key pair)
+    ];
     const [formData, setFormData] = useState<FormData>(() => {
         const saved = localStorage.getItem('jwtFormData');
         return saved ? JSON.parse(saved) : {
@@ -46,6 +51,8 @@ function App() {
     });
 
     const [generatedToken, setGeneratedToken] = useState('');
+    const [keyTitle, setKeyTitle] = useState('JWT Secret (Shared Key)');
+    const [largeInput, setLargeInput] = useState(false);
     const [error, setError] = useState('');
     const [isJSONValid, setIsJSONValid] = useState(true);
     const [showCopySuccess, setShowCopySuccess] = useState(false);
@@ -65,11 +72,10 @@ function App() {
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const {name, value} = e.target;
-        console.log('Input Change:', name, value);
         setFormData(prev => ({...prev, [name]: value}));
     };
 
-    const generateToken = () => {
+    const generateToken = async () => {
         sendAnalytics();
 
         try {
@@ -81,20 +87,56 @@ function App() {
                 throw new Error('Invalid JSON in custom data');
             }
 
+            const jti = uuidv4();
+            const sub = formData.email;
+            const exp = Math.floor(new Date(expiration).getTime() / 1000);
             const payload = {
-                sub     : formData.email,
-                exp     : Math.floor(new Date(expiration).getTime() / 1000),
-                jti     : uuidv4(),
+                sub,
+                exp,
+                jti,
                 username: formData.email,
                 userId  : formData.email,
                 ...customJSONParsed,
             };
 
             console.log('Generated Payload:', payload);
+            let secret: CryptoKey | KeyObject | JWK | Uint8Array;
 
-            const token = jwt.sign(payload, formData.jwtSecret, {
-                algorithm: formData.algorithm,
-            });
+            if (formData.algorithm.startsWith('HS')) {
+                // HMAC (Shared Secret)
+                secret = new TextEncoder().encode(formData.jwtSecret);
+                setKeyTitle('JWT Secret (Shared Key)');
+                setLargeInput(false);
+
+            } else if (formData.algorithm.startsWith('RS') || formData.algorithm.startsWith('PS')) {
+                // RSA and RSA-PSS (Private Key)
+                secret = await importPKCS8(formData.jwtSecret, formData.algorithm);
+                setKeyTitle('RSA Private Key');
+                setLargeInput(true);
+
+            } else if (formData.algorithm.startsWith('ES')) {
+                // ECDSA (Elliptic Curve Key)
+                secret = await importPKCS8(formData.jwtSecret, formData.algorithm);
+                setKeyTitle('EC Private Key');
+                setLargeInput(true);
+
+            } else {
+                throw new Error('Unsupported algorithm');
+            }
+
+            console.log('Generated Secret Key:', secret);
+            const token = await new SignJWT({'urn:jwt-token-generator:claim': true})
+                .setProtectedHeader({alg: formData.algorithm})
+                .setIssuedAt()
+                .setJti(jti)
+                .setSubject(sub)
+                .setIssuer('jwt-token-generator.netlify.app')
+                .setAudience('urn:jwt-token-generator:api')
+                .setExpirationTime(exp)
+                .sign(secret)
+
+            console.log('Generated Token:', token);
+
             setGeneratedToken(token);
             setError('');
         } catch (err) {
@@ -118,7 +160,7 @@ function App() {
                 <img src="/logo.png" alt="Logo" className="mx-auto my-4 w-16 h-16"/>
                 <div className="bg-white rounded-lg shadow-lg p-6">
                     <div className="flex items-center gap-2 mb-6">
-                        <h1 className="text-2xl font-bold text-neutral">JWT Token Generator</h1>
+                        <h1 className="text-2xl font-bold text-neutral">JWT Key Generator</h1>
                     </div>
 
                     <div className="space-y-4">
@@ -167,21 +209,32 @@ function App() {
 
                         <div>
                             <label className="block text-sm font-medium text-neutral mb-1">
-                                JWT Secret *
+                                {keyTitle} *
                             </label>
-                            <input
-                                type="text"
-                                name="jwtSecret"
-                                value={formData.jwtSecret}
-                                onChange={handleInputChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                                required
-                            />
+                            {largeInput ? (
+                                <textarea
+                                    name="jwtSecret"
+                                    value={formData.jwtSecret}
+                                    onChange={handleInputChange}
+                                    rows={6}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+                                    required
+                                />
+                            ) : (
+                                <input
+                                    type="text"
+                                    name="jwtSecret"
+                                    value={formData.jwtSecret}
+                                    onChange={handleInputChange}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                    required
+                                />
+                            )}
                         </div>
 
                         <div className="relative">
                             <label className="block text-sm font-medium text-neutral mb-1">
-                                Custom JSON Data
+                                Custom payload Data (JSON)
                             </label>
                             <textarea
                                 name="customJSON"
@@ -207,13 +260,13 @@ function App() {
                             onClick={generateToken}
                             className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-2 px-4 rounded-md transition-colors"
                         >
-                            Generate Token
+                            Generate Key
                         </button>
 
                         {generatedToken && (
                             <div className="mt-6">
                                 <label className="block text-sm font-medium text-neutral mb-1">
-                                    Generated Token
+                                    Generated Key
                                 </label>
                                 <div className="relative">
                   <textarea
@@ -237,8 +290,10 @@ function App() {
                             </div>
                         )}
                     </div>
-                    <div>Have suggestions or found a bug? <a href="https://github.com/matrunchyk/jwt-token-generator/issues" target="_blank" rel="noreferrer"
-                                                             className="text-primary">Open an issue</a></div>
+                    <div className="mt-4">Have suggestions or found a bug? <a href="https://github.com/matrunchyk/jwt-token-generator/issues" target="_blank" rel="noreferrer"
+                                                                              className="text-primary">Open an issue</a></div>
+                    <div className="text-xs text-gray-500 mt-4">We do not store any data you enter on this page. The generated token is stored in your browser's local storage.
+                    </div>
                 </div>
             </div>
         </div>
