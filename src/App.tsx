@@ -7,11 +7,12 @@ interface FormData {
     email: string;
     jwtSecret: string;
     customJSON: string;
+    algorithm: string;
 }
 
 declare global {
     interface Window {
-        gtag: any;
+        gtag(event: string, action: string, params: Record<string, unknown>): void;
     }
 }
 
@@ -28,15 +29,16 @@ const sendAnalytics = () => {
 }
 
 function App() {
+    const supportedAlgorithms = ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512', 'PS256', 'PS384', 'PS512'];
     const [formData, setFormData] = useState<FormData>(() => {
         const saved = localStorage.getItem('jwtFormData');
         return saved ? JSON.parse(saved) : {
             email     : '',
             jwtSecret : '',
-            customJSON: '{}'
+            customJSON: '{}',
+            algorithm : supportedAlgorithms[0],
         };
     });
-
     const [expiration, setExpiration] = useState(() => {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
@@ -61,8 +63,9 @@ function App() {
         }
     }, [formData.customJSON]);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const {name, value} = e.target;
+        console.log('Input Change:', name, value);
         setFormData(prev => ({...prev, [name]: value}));
     };
 
@@ -82,11 +85,13 @@ function App() {
                 sub     : formData.email,
                 exp     : Math.floor(new Date(expiration).getTime() / 1000),
                 jti     : uuidv4(),
-                alg     : "HS256",
+                alg     : formData.algorithm,
                 username: formData.email,
                 userId  : formData.email,
                 ...customJSONParsed,
             };
+
+            console.log('Generated Payload:', payload);
 
             const token = sign(payload, formData.jwtSecret);
             setGeneratedToken(token);
@@ -116,6 +121,23 @@ function App() {
                     </div>
 
                     <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-neutral mb-1">
+                                Algorithm
+                            </label>
+
+                            <select
+                                name="algorithm"
+                                value={formData.algorithm}
+                                onChange={handleInputChange}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                            >
+                                {supportedAlgorithms.map((alg) => (
+                                    <option key={alg} value={alg}>{alg}</option>
+                                ))}
+                            </select>
+                        </div>
+
                         <div>
                             <label className="block text-sm font-medium text-neutral mb-1">
                                 Email *
