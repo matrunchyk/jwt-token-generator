@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import sign from 'jwt-encode';
+import jwt, { type Algorithm } from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { Copy, CheckCircle2, XCircle, Check } from 'lucide-react';
 
@@ -7,7 +7,7 @@ interface FormData {
     email: string;
     jwtSecret: string;
     customJSON: string;
-    algorithm: string;
+    algorithm: Algorithm;
 }
 
 declare global {
@@ -29,7 +29,7 @@ const sendAnalytics = () => {
 }
 
 function App() {
-    const supportedAlgorithms = ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512', 'PS256', 'PS384', 'PS512'];
+    const supportedAlgorithms: Algorithm[] = ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512', 'PS256', 'PS384', 'PS512'];
     const [formData, setFormData] = useState<FormData>(() => {
         const saved = localStorage.getItem('jwtFormData');
         return saved ? JSON.parse(saved) : {
@@ -85,7 +85,6 @@ function App() {
                 sub     : formData.email,
                 exp     : Math.floor(new Date(expiration).getTime() / 1000),
                 jti     : uuidv4(),
-                alg     : formData.algorithm,
                 username: formData.email,
                 userId  : formData.email,
                 ...customJSONParsed,
@@ -93,7 +92,9 @@ function App() {
 
             console.log('Generated Payload:', payload);
 
-            const token = sign(payload, formData.jwtSecret);
+            const token = jwt.sign(payload, formData.jwtSecret, {
+                algorithm: formData.algorithm,
+            });
             setGeneratedToken(token);
             setError('');
         } catch (err) {
