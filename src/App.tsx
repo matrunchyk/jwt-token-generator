@@ -10,6 +10,71 @@ interface FormData {
     algorithm: string;
 }
 
+enum Alg {
+    HS256 = 'HS256',
+    HS384 = 'HS384',
+    HS512 = 'HS512',
+    RS256 = 'RS256',
+    RS384 = 'RS384',
+    RS512 = 'RS512',
+    ES256 = 'ES256',
+    ES384 = 'ES384',
+    ES512 = 'ES512',
+    PS256 = 'PS256',
+    PS384 = 'PS384',
+    PS512 = 'PS512',
+}
+
+interface SupportedAlgorithm {
+    key: Alg;
+    largeInput: boolean;
+}
+
+interface SupportedAlgorithmGroup {
+    title: string;
+    secretLabel: string;
+    algorithms: SupportedAlgorithm[];
+}
+
+const supportedAlgorithms: SupportedAlgorithmGroup[] = [
+    {
+        title: 'HMAC (Shared Secret)',
+        secretLabel: 'JWT Secret',
+        algorithms: [
+            { key: Alg.HS256, largeInput: false },
+            { key: Alg.HS384, largeInput: false },
+            { key: Alg.HS512, largeInput: false },
+        ],
+    },
+    {
+        title: 'RSA (Public/Private Key Pair)',
+        secretLabel: 'RSA Private Key',
+        algorithms: [
+            { key: Alg.RS256, largeInput: true },
+            { key: Alg.RS384, largeInput: true },
+            { key: Alg.RS512, largeInput: true },
+        ],
+    },
+    {
+        title: 'ECDSA (Elliptic Curve)',
+        secretLabel: 'EC Private Key',
+        algorithms: [
+            { key: Alg.ES256, largeInput: true },
+            { key: Alg.ES384, largeInput: true },
+            { key: Alg.ES512, largeInput: true },
+        ],
+    },
+    {
+        title: 'RSA-PSS (Public/Private Key Pair)',
+        secretLabel: 'RSA Private Key',
+        algorithms: [
+            { key: Alg.PS256, largeInput: true },
+            { key: Alg.PS384, largeInput: true },
+            { key: Alg.PS512, largeInput: true },
+        ],
+    },
+];
+
 declare global {
     interface Window {
         gtag(event: string, action: string, params: Record<string, unknown>): void;
@@ -29,19 +94,13 @@ const sendAnalytics = () => {
 }
 
 function App() {
-    const supportedAlgorithms = [
-        'HS256', 'HS384', 'HS512', // HMAC using SHA-256 (shared secret)
-        'RS256', 'RS384', 'RS512', // RSASSA-PKCS1-v1_5 using SHA-256 (RSA public/private key pair)
-        'ES256', 'ES384', 'ES512', // ECDSA using P-256 curve and SHA-256 (Elliptic Curve public/private key pair)
-        'PS256', 'PS384', 'PS512', // RSASSA-PSS using SHA-256 (RSA public/private key pair)
-    ];
     const [formData, setFormData] = useState<FormData>(() => {
         const saved = localStorage.getItem('jwtFormData');
         return saved ? JSON.parse(saved) : {
             email     : '',
             jwtSecret : '',
             customJSON: '{}',
-            algorithm : supportedAlgorithms[0],
+            algorithm : supportedAlgorithms[0].algorithms[0].key,
         };
     });
     const [expiration, setExpiration] = useState(() => {
@@ -70,8 +129,20 @@ function App() {
         }
     }, [formData.customJSON]);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const {name, value} = e.target;
+        setFormData(prev => ({...prev, [name]: value}));
+    };
+
+    const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const {name, value} = e.target;
+        const algorithm = supportedAlgorithms.flatMap(group => group.algorithms.map(algorithm => ({...algorithm, keyTitle: group.secretLabel}))).find(alg => alg.key === value);
+
+        if (algorithm) {
+            setKeyTitle(algorithm.keyTitle);
+            setLargeInput(algorithm.largeInput);
+        }
+
         setFormData(prev => ({...prev, [name]: value}));
     };
 
@@ -104,28 +175,22 @@ function App() {
 
             if (formData.algorithm.startsWith('HS')) {
                 // HMAC (Shared Secret)
-                secret = new TextEncoder().encode(formData.jwtSecret);
-                setKeyTitle('JWT Secret (Shared Key)');
-                setLargeInput(false);
+                secret = new TextEncoder().encode(btoa(formData.jwtSecret));
 
             } else if (formData.algorithm.startsWith('RS') || formData.algorithm.startsWith('PS')) {
                 // RSA and RSA-PSS (Private Key)
                 secret = await importPKCS8(formData.jwtSecret, formData.algorithm);
-                setKeyTitle('RSA Private Key');
-                setLargeInput(true);
 
             } else if (formData.algorithm.startsWith('ES')) {
                 // ECDSA (Elliptic Curve Key)
                 secret = await importPKCS8(formData.jwtSecret, formData.algorithm);
-                setKeyTitle('EC Private Key');
-                setLargeInput(true);
 
             } else {
                 throw new Error('Unsupported algorithm');
             }
 
             console.log('Generated Secret Key:', secret);
-            const token = await new SignJWT({'urn:jwt-token-generator:claim': true})
+            const token = await new SignJWT(payload)
                 .setProtectedHeader({alg: formData.algorithm})
                 .setIssuedAt()
                 .setJti(jti)
@@ -172,11 +237,15 @@ function App() {
                             <select
                                 name="algorithm"
                                 value={formData.algorithm}
-                                onChange={handleInputChange}
+                                onChange={handleSelectChange}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
                             >
-                                {supportedAlgorithms.map((alg) => (
-                                    <option key={alg} value={alg}>{alg}</option>
+                                {supportedAlgorithms.map((group) => (
+                                    <optgroup key={group.title} label={group.title}>
+                                        {group.algorithms.map((alg) => (
+                                            <option key={alg.key} value={alg.key}>{alg.key}</option>
+                                        ))}
+                                    </optgroup>
                                 ))}
                             </select>
                         </div>
